@@ -15,8 +15,13 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/stations', require('./routes/stationRoutes'));
+app.use('/api/chargers', require('./routes/chargerRoutes'));
+app.use('/api/bookings', require('./routes/bookingRoutes'));
+app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/feedback', require('./routes/feedbackRoutes'));
 
 // Test Route
+
 app.get('/', (req, res) => {
   res.send('EV Charging Station Management System API is Running...');
 });
