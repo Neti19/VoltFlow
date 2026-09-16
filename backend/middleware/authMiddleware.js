@@ -1,21 +1,32 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-module.exports = (req, res, next) => {
-  // Grab token from the request header
-  const authHeader = req.header('Authorization');
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No token, authorization denied' });
+const protect = async (req, res, next) => {
+  let token;
+
+  // Check if the authorization header exists and starts with 'Bearer'
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      // 1. Extract the token from the header
+      token = req.headers.authorization.split(' ')[1];
+
+      // 2. Verify the token using your secret key
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // 3. Find the user by ID and attach it to the request object
+      req.user = await User.findById(decoded.id).select('-password');
+
+      // 4. Move to the next function (the controller)
+      next();
+    } catch (error) {
+      return res.status(401).json({ success: false, message: 'Not authorized, invalid token' });
+    }
   }
 
-  const token = authHeader.split(' ')[1];
-
-  try {
-    // Verify the token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded.user;
-    next(); // Move on to the actual route logic
-  } catch (error) {
-    res.status(401).json({ message: 'Token is not valid' });
+  // If no token was found at all
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Not authorized, no token provided' });
   }
 };
+
+module.exports = protect;

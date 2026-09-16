@@ -1,0 +1,22 @@
+# 1. Node Dependencies
+node_modules/
+
+# 2. Environment Variables (Security)
+.env
+.env.*
+!.env.example
+
+# 3. React / Vite Build Artifacts
+dist/
+build/
+
+# 4. Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# 5. OS & Editor Specific Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
