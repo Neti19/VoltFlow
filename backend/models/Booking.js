@@ -57,5 +57,30 @@ const bookingSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+bookingSchema.index(
+  {
+    chargerID: 1,
+    chargerUnit: 1,
+    bookingDate: 1,
+    startTime: 1
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      bookingStatus: {
+        $in: [
+          'Pending',
+          'Confirmed',
+          'In Progress'
+        ]
+      }
+    },
+    name: 'unique_active_charger_unit_slot'
+  }
+);
 
-module.exports = mongoose.model('Booking', bookingSchema);
+
+module.exports = mongoose.model(
+  'Booking',
+  bookingSchema
+);

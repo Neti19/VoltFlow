@@ -19,63 +19,275 @@ const convertToTime = (minutes) => {
 // ============================================================
 exports.createBooking = async (req, res) => {
   try {
-    const { stationID, chargerID, chargerUnit, bookingDate, startTime, endTime } = req.body;
-
-    if (!stationID || !chargerID || !chargerUnit || !bookingDate || !startTime || !endTime) {
-      return res.status(400).json({ success: false, message: 'Please provide all booking details, including the charger unit.' });
-    }
-
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    if (bookingDate < today) {
-      return res.status(400).json({ success: false, message: 'You cannot book a slot from a past date.' });
-    }
-
-    if (bookingDate === today) {
-      const selectedMinutes = convertToMinutes(startTime);
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      if (selectedMinutes <= currentMinutes) {
-        return res.status(400).json({ success: false, message: 'This time slot has already passed.' });
-      }
-    }
-
-    const station = await Station.findById(stationID);
-    const charger = await Charger.findById(chargerID);
-
-    if (!station) return res.status(404).json({ success: false, message: 'Charging station not found' });
-    if (!charger) return res.status(404).json({ success: false, message: 'Charger not found' });
-    if (charger.stationID.toString() !== stationID.toString()) return res.status(400).json({ success: false, message: 'Charger does not belong to this station' });
-    if (charger.status !== 'Available') return res.status(400).json({ success: false, message: 'Charger is currently unavailable' });
-
-    // Check overlaps for this specific charger ID AND specific Unit seat
-    const overlappingBookings = await Booking.find({
+    const {
+      stationID,
       chargerID,
       chargerUnit,
       bookingDate,
-      bookingStatus: { $in: ['Pending', 'Confirmed', 'In Progress'] }
-    });
+      startTime,
+      endTime
+    } = req.body;
+
+    /*
+    |--------------------------------------------------------------------------
+    | BASIC VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !stationID ||
+      !chargerID ||
+      !chargerUnit ||
+      !bookingDate ||
+      !startTime ||
+      !endTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Please provide all booking details, including the charger unit.'
+      });
+    }
 
     const reqStart = convertToMinutes(startTime);
     const reqEnd = convertToMinutes(endTime);
 
-    const hasOverlap = overlappingBookings.some(b => {
-      const bStart = convertToMinutes(b.startTime);
-      const bEnd = convertToMinutes(b.endTime);
-      return (bStart < reqEnd && bEnd > reqStart);
-    });
-
-    if (hasOverlap) {
-      return res.status(400).json({ success: false, message: `Charger Unit ${chargerUnit} is already booked for this time slot.` });
+    if (reqStart >= reqEnd) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking time range.'
+      });
     }
 
-    const verificationPIN = Math.floor(1000 + Math.random() * 9000).toString();
+    /*
+    |--------------------------------------------------------------------------
+    | DATE VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const now = new Date();
+
+    const today =
+      `${now.getFullYear()}-` +
+      `${String(now.getMonth() + 1).padStart(2, '0')}-` +
+      `${String(now.getDate()).padStart(2, '0')}`;
+
+    if (bookingDate < today) {
+      return res.status(400).json({
+        success: false,
+        message: 'You cannot book a slot from a past date.'
+      });
+    }
+
+    if (bookingDate === today) {
+      const currentMinutes =
+        now.getHours() * 60 + now.getMinutes();
+
+      if (reqStart <= currentMinutes) {
+        return res.status(400).json({
+          success: false,
+          message: 'This time slot has already passed.'
+        });
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET STATION + CHARGER
+    |--------------------------------------------------------------------------
+    */
+
+    const station = await Station.findById(stationID);
+    const charger = await Charger.findById(chargerID);
+
+    if (!station) {
+      return res.status(404).json({
+        success: false,
+        message: 'Charging station not found'
+      });
+    }
+
+    if (!charger) {
+      return res.status(404).json({
+        success: false,
+        message: 'Charger not found'
+      });
+    }
+
+    if (
+      charger.stationID.toString() !==
+      stationID.toString()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Charger does not belong to this station'
+      });
+    }
+
+    if (charger.status !== 'Available') {
+      return res.status(400).json({
+        success: false,
+        message: 'Charger is currently unavailable'
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHARGER UNIT VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const totalUnits = Number(charger.quantity || 1);
+
+    if (
+      !Number.isInteger(Number(chargerUnit)) ||
+      Number(chargerUnit) < 1 ||
+      Number(chargerUnit) > totalUnits
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid charger unit. Available units are 1 to ${totalUnits}.`
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHARGING DURATION VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const chargingDuration =
+      Number(charger.chargingDuration);
+
+    if (!chargingDuration || chargingDuration <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid charging duration configured for this charger.'
+      });
+    }
+
+    if (
+      reqEnd - reqStart !== chargingDuration
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Invalid booking duration. This charger requires a ${chargingDuration}-minute slot.`
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | STATION OPENING/CLOSING TIME VALIDATION
+    |--------------------------------------------------------------------------
+    */
+
+    const openingMinutes =
+      convertToMinutes(station.openingTime);
+
+    const closingMinutes =
+      convertToMinutes(station.closingTime);
+
+    if (
+      reqStart < openingMinutes ||
+      reqEnd > closingMinutes
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected slot is outside station operating hours.'
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SLOT GRID VALIDATION
+    |--------------------------------------------------------------------------
+    |
+    | This makes sure users cannot manually send arbitrary overlapping
+    | times such as 10:15 - 11:15 when the charger works in 60-minute
+    | slots.
+    |
+    */
+
+    const slotOffset =
+      reqStart - openingMinutes;
+
+    if (
+      slotOffset < 0 ||
+      slotOffset % chargingDuration !== 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking slot.'
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | AVAILABILITY CHECK
+    |--------------------------------------------------------------------------
+    |
+    | This check is useful for giving the user a friendly response.
+    |
+    | IMPORTANT:
+    | The database unique index below is the actual concurrency protection.
+    |
+    */
+
+    const overlappingBookings =
+      await Booking.find({
+        chargerID: charger._id,
+        chargerUnit: Number(chargerUnit),
+        bookingDate,
+        bookingStatus: {
+          $in: [
+            'Pending',
+            'Confirmed',
+            'In Progress'
+          ]
+        }
+      }).select(
+        'startTime endTime bookingStatus'
+      );
+
+    const hasOverlap =
+      overlappingBookings.some(booking => {
+        const bookingStart =
+          convertToMinutes(booking.startTime);
+
+        const bookingEnd =
+          convertToMinutes(booking.endTime);
+
+        return (
+          bookingStart < reqEnd &&
+          bookingEnd > reqStart
+        );
+      });
+
+    if (hasOverlap) {
+      return res.status(409).json({
+        success: false,
+        message:
+          `Charger Unit ${chargerUnit} is already booked for this time slot.`
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE BOOKING
+    |--------------------------------------------------------------------------
+    */
+
+    const verificationPIN =
+      Math.floor(
+        1000 + Math.random() * 9000
+      ).toString();
 
     const booking = new Booking({
       userID: req.user.id,
       stationID,
       chargerID,
-      chargerUnit,
+      chargerUnit: Number(chargerUnit),
       bookingDate,
       startTime,
       endTime,
@@ -83,36 +295,128 @@ exports.createBooking = async (req, res) => {
       verificationPIN
     });
 
-    await booking.save();
+    /*
+    |--------------------------------------------------------------------------
+    | CRITICAL CONCURRENCY PROTECTION
+    |--------------------------------------------------------------------------
+    |
+    | Even if two requests passed the availability check above at exactly
+    | the same time, MongoDB's unique index allows only ONE to save.
+    |
+    */
+
+    try {
+      await booking.save();
+    } catch (error) {
+      if (error?.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          message:
+            'This charger unit and time slot was just booked by another user. Please select another slot.'
+        });
+      }
+
+      throw error;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE PAYMENT
+    |--------------------------------------------------------------------------
+    */
 
     const baseAmount = 150;
     const taxRate = 18;
-    const taxAmount = (baseAmount * taxRate) / 100;
-    const totalAmount = baseAmount + taxAmount;
+
+    const taxAmount =
+      (baseAmount * taxRate) / 100;
+
+    const totalAmount =
+      baseAmount + taxAmount;
 
     const payment = new Payment({
       bookingID: booking._id,
       amount: baseAmount,
-      taxRate: taxRate,
-      taxAmount: Number(taxAmount.toFixed(2)),
-      totalAmount: Number(totalAmount.toFixed(2)),
+      taxRate,
+      taxAmount: Number(
+        taxAmount.toFixed(2)
+      ),
+      totalAmount: Number(
+        totalAmount.toFixed(2)
+      ),
       paymentStatus: 'Pending',
-      transactionID: `TXN_${Date.now()}`,
+      transactionID:
+        `TXN_${Date.now()}`,
       billGenerated: false
     });
 
-    await payment.save();
+    try {
+      await payment.save();
+    } catch (error) {
+      /*
+       * If payment creation fails, release the booking so
+       * another customer can use the slot.
+       */
+
+      await Booking.findByIdAndUpdate(
+        booking._id,
+        {
+          bookingStatus: 'Cancelled'
+        }
+      );
+
+      throw error;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONNECT PAYMENT TO BOOKING
+    |--------------------------------------------------------------------------
+    */
+
     booking.paymentID = payment._id;
+
     await booking.save();
 
-    const completeBooking = await Booking.findById(booking._id)
-      .populate('stationID', 'stationName address openingTime closingTime')
-      .populate('chargerID', 'vehicleType chargingSpeed pricePerKwh chargingDuration status')
-      .populate('paymentID');
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN COMPLETE BOOKING
+    |--------------------------------------------------------------------------
+    */
 
-    res.status(201).json({ success: true, message: 'Booking created successfully. Proceed to payment.', data: { booking: completeBooking, payment } });
+    const completeBooking =
+      await Booking.findById(booking._id)
+        .populate(
+          'stationID',
+          'stationName address openingTime closingTime'
+        )
+        .populate(
+          'chargerID',
+          'vehicleType chargingSpeed pricePerKwh chargingDuration status'
+        )
+        .populate('paymentID');
+
+    return res.status(201).json({
+      success: true,
+      message:
+        'Booking created successfully. Proceed to payment.',
+      data: {
+        booking: completeBooking,
+        payment
+      }
+    });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    console.error(
+      'Create booking error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
   }
 };
 
