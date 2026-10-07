@@ -2,38 +2,222 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+
 export default function OwnerEarnings() {
+
   const navigate = useNavigate();
 
-  const [earnings, setEarnings] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [earnings, setEarnings] =
+    useState(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
+
+  const currentDate =
+    new Date();
+
+  const [reportMonth, setReportMonth] =
+    useState(
+      currentDate.getMonth() + 1
+    );
+
+  const [reportYear, setReportYear] =
+    useState(
+      currentDate.getFullYear()
+    );
+
+  const [reportLoading, setReportLoading] =
+    useState('');
+
+
+  // ==========================================================
+  // FETCH OWNER EARNINGS
+  // ==========================================================
 
   const fetchEarnings = async () => {
+
     try {
+
       setLoading(true);
       setError('');
 
-      const response = await API.get('/payments/owner/earnings');
+      const response =
+        await API.get(
+          '/payments/owner/earnings'
+        );
 
-      setEarnings(response.data.data);
+      setEarnings(
+        response.data.data
+      );
+
     } catch (error) {
-      console.error('Failed to load earnings:', error);
+
+      console.error(
+        'Failed to load earnings:',
+        error
+      );
 
       setError(
         error.response?.data?.message ||
         'Failed to load earnings'
       );
+
     } finally {
+
       setLoading(false);
+
     }
   };
+
 
   useEffect(() => {
     fetchEarnings();
   }, []);
 
+
+  // ==========================================================
+  // DOWNLOAD STATION PDF
+  // ==========================================================
+
+  const downloadReport = async (
+    type,
+    stationId,
+    stationName
+  ) => {
+
+    try {
+
+      setReportLoading(
+        `${type}-${stationId}`
+      );
+
+
+      const params =
+        new URLSearchParams({
+          type,
+          year: String(reportYear),
+          stationId: String(stationId)
+        });
+
+
+      // Monthly report needs month
+      if (type === 'monthly') {
+
+        params.set(
+          'month',
+          String(reportMonth)
+        );
+      }
+
+
+      const response =
+        await API.get(
+          `/payments/owner/earnings/pdf?${params.toString()}`,
+          {
+            responseType: 'blob'
+          }
+        );
+
+
+      const blob =
+        new Blob(
+          [response.data],
+          {
+            type: 'application/pdf'
+          }
+        );
+
+
+      const url =
+        window.URL.createObjectURL(
+          blob
+        );
+
+
+      const link =
+        document.createElement('a');
+
+
+      const safeStationName =
+        String(
+          stationName ||
+          'station'
+        )
+          .replace(
+            /[^a-z0-9]+/gi,
+            '-'
+          )
+          .replace(
+            /^-+|-+$/g,
+            ''
+          )
+          .toLowerCase();
+
+
+      link.href = url;
+
+
+      link.download =
+        type === 'monthly'
+          ? `VoltFlow-${safeStationName}-monthly-earnings-${reportYear}-${String(reportMonth).padStart(2, '0')}.pdf`
+          : `VoltFlow-${safeStationName}-yearly-earnings-${reportYear}.pdf`;
+
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      link.remove();
+
+      window.URL.revokeObjectURL(
+        url
+      );
+
+    } catch (error) {
+
+      console.error(
+        'PDF generation failed:',
+        error
+      );
+
+      alert(
+        error.response?.data?.message ||
+        'Failed to generate PDF'
+      );
+
+    } finally {
+
+      setReportLoading('');
+
+    }
+  };
+
+
+  // ==========================================================
+  // LOADING
+  // ==========================================================
+
   if (loading) {
+
     return (
       <div
         style={{
@@ -44,12 +228,22 @@ export default function OwnerEarnings() {
           fontFamily: 'sans-serif'
         }}
       >
-        <h2>Loading Earnings...</h2>
+
+        <h2>
+          Loading Earnings...
+        </h2>
+
       </div>
     );
   }
 
+
+  // ==========================================================
+  // ERROR
+  // ==========================================================
+
   if (error) {
+
     return (
       <div
         style={{
@@ -59,6 +253,7 @@ export default function OwnerEarnings() {
           fontFamily: 'sans-serif'
         }}
       >
+
         <h2
           style={{
             color: '#dc2626'
@@ -67,7 +262,10 @@ export default function OwnerEarnings() {
           Unable to Load Earnings
         </h2>
 
-        <p>{error}</p>
+        <p>
+          {error}
+        </p>
+
 
         <button
           onClick={fetchEarnings}
@@ -85,8 +283,13 @@ export default function OwnerEarnings() {
           Try Again
         </button>
 
+
         <button
-          onClick={() => navigate('/owner-dashboard')}
+          onClick={() =>
+            navigate(
+              '/owner-dashboard'
+            )
+          }
           style={{
             padding: '10px 18px',
             background: '#64748b',
@@ -99,22 +302,35 @@ export default function OwnerEarnings() {
         >
           Back to Dashboard
         </button>
+
       </div>
     );
   }
 
-  const payments = earnings?.payments || [];
+
+  const stations =
+    earnings?.stations || [];
+
+
+  // ==========================================================
+  // PAGE
+  // ==========================================================
 
   return (
+
     <div
       style={{
-        maxWidth: '1000px',
+        maxWidth: '1100px',
         margin: '30px auto',
         fontFamily: 'sans-serif',
         padding: '0 20px'
       }}
     >
-      {/* Header */}
+
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
+
       <div
         style={{
           display: 'flex',
@@ -125,7 +341,9 @@ export default function OwnerEarnings() {
           gap: '15px'
         }}
       >
+
         <div>
+
           <h2
             style={{
               margin: 0,
@@ -141,12 +359,20 @@ export default function OwnerEarnings() {
               marginTop: '8px'
             }}
           >
-            View your paid booking earnings and payment history.
+            View earnings separately for each
+            charging station and download
+            monthly or yearly reports.
           </p>
+
         </div>
 
+
         <button
-          onClick={() => navigate('/owner-dashboard')}
+          onClick={() =>
+            navigate(
+              '/owner-dashboard'
+            )
+          }
           style={{
             padding: '10px 18px',
             background: '#64748b',
@@ -159,9 +385,14 @@ export default function OwnerEarnings() {
         >
           ← Back to Dashboard
         </button>
+
       </div>
 
-      {/* Summary Cards */}
+
+      {/* =====================================================
+          OWNER SUMMARY
+      ====================================================== */}
+
       <div
         style={{
           display: 'grid',
@@ -171,7 +402,9 @@ export default function OwnerEarnings() {
           marginBottom: '30px'
         }}
       >
+
         {/* Total Earnings */}
+
         <div
           style={{
             padding: '25px',
@@ -180,6 +413,7 @@ export default function OwnerEarnings() {
             border: '1px solid #bfdbfe'
           }}
         >
+
           <p
             style={{
               margin: 0,
@@ -187,7 +421,7 @@ export default function OwnerEarnings() {
               fontSize: '0.9rem'
             }}
           >
-            Total Earnings
+            Total Owner Earnings
           </p>
 
           <h2
@@ -197,11 +431,17 @@ export default function OwnerEarnings() {
               fontSize: '2rem'
             }}
           >
-            ₹{Number(earnings?.totalEarnings || 0).toFixed(2)}
+            ₹
+            {Number(
+              earnings?.totalEarnings || 0
+            ).toFixed(2)}
           </h2>
+
         </div>
 
+
         {/* Completed Bookings */}
+
         <div
           style={{
             padding: '25px',
@@ -210,6 +450,7 @@ export default function OwnerEarnings() {
             border: '1px solid #bbf7d0'
           }}
         >
+
           <p
             style={{
               margin: 0,
@@ -229,9 +470,12 @@ export default function OwnerEarnings() {
           >
             {earnings?.totalCompletedBookings || 0}
           </h2>
+
         </div>
 
+
         {/* Completed Payments */}
+
         <div
           style={{
             padding: '25px',
@@ -240,6 +484,7 @@ export default function OwnerEarnings() {
             border: '1px solid #fde68a'
           }}
         >
+
           <p
             style={{
               margin: 0,
@@ -257,224 +502,480 @@ export default function OwnerEarnings() {
               fontSize: '2rem'
             }}
           >
-            {payments.length}
+            {earnings?.totalPaidBookings || 0}
           </h2>
+
         </div>
+
       </div>
 
-      {/* Payment History */}
+
+      {/* =====================================================
+          REPORT PERIOD
+      ====================================================== */}
+
       <div
         style={{
-          border: '1px solid #cbd5e1',
+          border:
+            '1px solid #cbd5e1',
           borderRadius: '10px',
-          overflow: 'hidden',
-          background: '#ffffff'
+          padding: '20px',
+          marginBottom: '25px',
+          background: '#fff'
         }}
       >
-        <div
+
+        <h3
           style={{
-            padding: '20px',
-            background: '#f8fafc',
-            borderBottom: '1px solid #cbd5e1'
+            marginTop: 0
           }}
         >
-          <h3
-            style={{
-              margin: 0,
-              color: '#0f172a'
-            }}
-          >
-            Completed Payment History
-          </h3>
-        </div>
+          Report Period
+        </h3>
 
-        {payments.length === 0 ? (
-          <div
-            style={{
-              padding: '40px',
-              textAlign: 'center',
-              color: '#64748b'
-            }}
-          >
-            <p>No completed payments found.</p>
-          </div>
-        ) : (
-          <div
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '15px',
+            alignItems: 'end',
+            flexWrap: 'wrap'
+          }}
+        >
+
+          {/* Month */}
+
+          <label
             style={{
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              gap: '6px',
+              fontWeight: '600'
             }}
           >
-            {payments.map((payment) => (
+
+            Month
+
+            <select
+              value={reportMonth}
+              onChange={e =>
+                setReportMonth(
+                  Number(
+                    e.target.value
+                  )
+                )
+              }
+              style={{
+                padding: '9px',
+                borderRadius: '6px',
+                border:
+                  '1px solid #cbd5e1'
+              }}
+            >
+
+              {MONTHS.map(
+                (monthName, index) => (
+
+                  <option
+                    key={monthName}
+                    value={index + 1}
+                  >
+                    {monthName}
+                  </option>
+
+                )
+              )}
+
+            </select>
+
+          </label>
+
+
+          {/* Year */}
+
+          <label
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              fontWeight: '600'
+            }}
+          >
+
+            Year
+
+            <input
+              type="number"
+              min="2000"
+              max="2100"
+              value={reportYear}
+              onChange={e =>
+                setReportYear(
+                  Number(
+                    e.target.value
+                  )
+                )
+              }
+              style={{
+                padding: '9px',
+                borderRadius: '6px',
+                border:
+                  '1px solid #cbd5e1',
+                width: '120px'
+              }}
+            />
+
+          </label>
+
+        </div>
+
+      </div>
+
+
+      {/* =====================================================
+          STATIONS
+      ====================================================== */}
+
+      {stations.length === 0 ? (
+
+        <div
+          style={{
+            padding: '40px',
+            textAlign: 'center',
+            border:
+              '1px solid #cbd5e1',
+            borderRadius: '10px',
+            color: '#64748b'
+          }}
+        >
+
+          <h3>
+            No Stations Found
+          </h3>
+
+          <p>
+            No charging stations are
+            currently associated with
+            your owner account.
+          </p>
+
+        </div>
+
+      ) : (
+
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}
+        >
+
+          {stations.map(
+            station => (
+
               <div
-                key={payment._id}
+                key={String(
+                  station.stationId
+                )}
                 style={{
-                  padding: '20px',
-                  borderBottom: '1px solid #e2e8f0'
+                  border:
+                    '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '25px',
+                  background: '#fff'
                 }}
               >
+
+                {/* Station Header */}
+
                 <div
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
+                    justifyContent:
+                      'space-between',
                     gap: '20px',
-                    flexWrap: 'wrap'
+                    flexWrap: 'wrap',
+                    marginBottom: '20px'
                   }}
                 >
+
                   <div>
-                    <h4
+
+                    <h3
                       style={{
-                        margin: '0 0 8px 0',
-                        color: '#1e293b'
+                        margin:
+                          '0 0 8px 0',
+                        color: '#0f172a'
                       }}
                     >
-                      Transaction
-                    </h4>
+                      {station.stationName ||
+                        'Unnamed Station'}
+                    </h3>
 
                     <p
                       style={{
                         margin: '5px 0',
-                        color: '#475569'
+                        color: '#64748b'
                       }}
                     >
-                      <strong>Transaction ID:</strong>{' '}
-                      {payment.transactionID}
+                      {station.address ||
+                        'Address not available'}
                     </p>
 
                     <p
                       style={{
                         margin: '5px 0',
-                        color: '#475569'
+                        color: '#64748b'
                       }}
                     >
-                      <strong>Payment Status:</strong>{' '}
-                      <span
-                        style={{
-                          color: '#16a34a',
-                          fontWeight: '600'
-                        }}
-                      >
-                        {payment.paymentStatus}
-                      </span>
+                      Operating Hours:{' '}
+                      {station.openingTime ||
+                        '-'}{' '}
+                      -{' '}
+                      {station.closingTime ||
+                        '-'}
                     </p>
 
-                    {payment.createdAt && (
-                      <p
-                        style={{
-                          margin: '5px 0',
-                          color: '#64748b',
-                          fontSize: '0.9rem'
-                        }}
-                      >
-                        <strong>Date:</strong>{' '}
-                        {new Date(
-                          payment.createdAt
-                        ).toLocaleString()}
-                      </p>
-                    )}
                   </div>
+
+
+                  {/* Station Earnings */}
 
                   <div
                     style={{
                       textAlign: 'right'
                     }}
                   >
+
                     <p
                       style={{
                         margin: 0,
                         color: '#64748b',
-                        fontSize: '0.85rem'
+                        fontSize:
+                          '0.9rem'
                       }}
                     >
-                      Total Amount
+                      Station Earnings
                     </p>
 
-                    <h3
+                    <h2
                       style={{
-                        margin: '5px 0',
+                        margin:
+                          '5px 0',
                         color: '#2563eb'
                       }}
                     >
                       ₹
                       {Number(
-                        payment.totalAmount ||
-                        payment.amount ||
+                        station.totalEarnings ||
                         0
                       ).toFixed(2)}
-                    </h3>
+                    </h2>
+
                   </div>
+
                 </div>
 
-                {/* Amount Breakdown */}
+
+                {/* Station Statistics */}
+
                 <div
                   style={{
-                    marginTop: '15px',
-                    padding: '15px',
-                    background: '#f8fafc',
-                    borderRadius: '6px'
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '15px',
+                    marginBottom: '20px'
                   }}
                 >
-                  <p
-                    style={{
-                      margin: '5px 0',
-                      color: '#475569'
-                    }}
-                  >
-                    <strong>Base Amount:</strong> ₹
-                    {Number(
-                      payment.amount || 0
-                    ).toFixed(2)}
-                  </p>
 
-                  <p
+                  <div
                     style={{
-                      margin: '5px 0',
-                      color: '#475569'
+                      padding: '15px',
+                      background:
+                        '#f8fafc',
+                      borderRadius: '7px'
                     }}
                   >
+
+                    <div
+                      style={{
+                        color: '#64748b',
+                        fontSize:
+                          '0.85rem'
+                      }}
+                    >
+                      Completed Payments
+                    </div>
+
                     <strong>
-                      Tax ({payment.taxRate || 18}%):
-                    </strong>{' '}
-                    ₹
-                    {Number(
-                      payment.taxAmount || 0
-                    ).toFixed(2)}
-                  </p>
+                      {station.totalPayments ||
+                        0}
+                    </strong>
 
-                  <p
+                  </div>
+
+
+                  <div
                     style={{
-                      margin: '5px 0',
-                      color: '#0f172a',
-                      fontWeight: 'bold'
+                      padding: '15px',
+                      background:
+                        '#f8fafc',
+                      borderRadius: '7px'
                     }}
                   >
-                    <strong>Total:</strong> ₹
-                    {Number(
-                      payment.totalAmount ||
-                      payment.amount ||
-                      0
-                    ).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* Refresh Button */}
+                    <div
+                      style={{
+                        color: '#64748b',
+                        fontSize:
+                          '0.85rem'
+                      }}
+                    >
+                      Completed Bookings
+                    </div>
+
+                    <strong>
+                      {station.totalCompletedBookings ||
+                        0}
+                    </strong>
+
+                  </div>
+
+                </div>
+
+
+                {/* Download Buttons */}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                    borderTop:
+                      '1px solid #e2e8f0',
+                    paddingTop: '20px'
+                  }}
+                >
+
+                  {/* Monthly PDF */}
+
+                  <button
+                    onClick={() =>
+                      downloadReport(
+                        'monthly',
+                        station.stationId,
+                        station.stationName
+                      )
+                    }
+                    disabled={
+                      Boolean(
+                        reportLoading
+                      )
+                    }
+                    style={{
+                      padding:
+                        '11px 18px',
+                      background:
+                        '#2563eb',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius:
+                        '6px',
+                      cursor:
+                        reportLoading
+                          ? 'not-allowed'
+                          : 'pointer',
+                      fontWeight:
+                        '600',
+                      opacity:
+                        reportLoading
+                          ? 0.7
+                          : 1
+                    }}
+                  >
+
+                    {reportLoading ===
+                    `monthly-${station.stationId}`
+                      ? 'Generating...'
+                      : 'Download Monthly PDF'}
+
+                  </button>
+
+
+                  {/* Yearly PDF */}
+
+                  <button
+                    onClick={() =>
+                      downloadReport(
+                        'yearly',
+                        station.stationId,
+                        station.stationName
+                      )
+                    }
+                    disabled={
+                      Boolean(
+                        reportLoading
+                      )
+                    }
+                    style={{
+                      padding:
+                        '11px 18px',
+                      background:
+                        '#16a34a',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius:
+                        '6px',
+                      cursor:
+                        reportLoading
+                          ? 'not-allowed'
+                          : 'pointer',
+                      fontWeight:
+                        '600',
+                      opacity:
+                        reportLoading
+                          ? 0.7
+                          : 1
+                    }}
+                  >
+
+                    {reportLoading ===
+                    `yearly-${station.stationId}`
+                      ? 'Generating...'
+                      : 'Download Yearly PDF'}
+
+                  </button>
+
+                </div>
+
+              </div>
+
+            )
+          )}
+
+        </div>
+
+      )}
+
+
+      {/* =====================================================
+          REFRESH
+      ====================================================== */}
+
       <div
         style={{
           marginTop: '25px',
           textAlign: 'center'
         }}
       >
+
         <button
           onClick={fetchEarnings}
           style={{
             padding: '10px 20px',
-            background: '#2563eb',
+            background: '#64748b',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
@@ -484,7 +985,9 @@ export default function OwnerEarnings() {
         >
           🔄 Refresh Earnings
         </button>
+
       </div>
+
     </div>
   );
 }

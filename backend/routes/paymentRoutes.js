@@ -4,7 +4,8 @@ const router = express.Router();
 const {
   processPayment,
   getBill,
-  getOwnerEarnings
+  getOwnerEarnings,
+  getOwnerEarningsPdf
 } = require('../controllers/paymentController');
 
 const {
@@ -33,6 +34,12 @@ router.get(
   '/owner/earnings',
   protect,
   getOwnerEarnings
+);
+
+router.get(
+  '/owner/earnings/pdf',
+  protect,
+  getOwnerEarningsPdf
 );
 
 module.exports = router;

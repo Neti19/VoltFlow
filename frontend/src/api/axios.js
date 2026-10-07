@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-    baseURL: 'https://voltflow-backend-r9cj.onrender.com/api',
+    baseURL: '/api',
 });
 
 // Automatically inject JWT token from localStorage if present
