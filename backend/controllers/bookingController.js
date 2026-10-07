@@ -508,7 +508,19 @@ exports.cancelBooking = async (req, res) => {
     }
 
     booking.bookingStatus = 'Cancelled';
-    await booking.save();
+    try {
+  await booking.save();
+} catch (error) {
+  if (error?.code === 11000) {
+    return res.status(409).json({
+      success: false,
+      message:
+        'This charger unit and time slot was just booked by another user. Please select another slot.'
+    });
+  }
+
+  throw error;
+}
 
     const payment = await Payment.findOne({ bookingID: booking._id });
     if (payment && payment.paymentStatus === 'Pending') {
